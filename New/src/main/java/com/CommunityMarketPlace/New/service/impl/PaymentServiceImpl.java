@@ -87,14 +87,40 @@ public class PaymentServiceImpl implements PaymentService {
             throw new RuntimeException("Error while creating Razorpay order", e);
         }
     }
+    @Override
+    public void refundPayment(String razorpayPaymentId, Long amountInPaise) {
+        try {
+            JSONObject refundRequest = new JSONObject();
+
+            // For full refund, pass full amount
+            refundRequest.put("amount", amountInPaise);
+
+            razorpayClient.payments.refund(razorpayPaymentId, refundRequest);
+
+            System.out.println("Refund initiated successfully for payment: " + razorpayPaymentId);
+
+        } catch (RazorpayException e) {
+            throw new RuntimeException("Refund failed", e);
+        }
+    }
 
     @Override
     public boolean verifyPayment(VerifyPaymentRequest request) {
+
+        // 🔥 ADD THESE DEBUG LOGS
+        System.out.println("====== VERIFY PAYMENT DEBUG ======");
+        System.out.println("Razorpay OrderId: " + request.getRazorpayOrderId());
+        System.out.println("Razorpay PaymentId: " + request.getRazorpayPaymentId());
+        System.out.println("Received Signature: " + request.getRazorpaySignature());
+
         // Generate signature
         String generatedSignature = generateSignature(
                 request.getRazorpayOrderId() + "|" + request.getRazorpayPaymentId(),
                 keySecret
         );
+
+        System.out.println("Generated Signature: " + generatedSignature);
+        System.out.println("===================================");
 
         boolean isValid = generatedSignature.equals(request.getRazorpaySignature());
 
@@ -106,7 +132,6 @@ public class PaymentServiceImpl implements PaymentService {
                     payment.setStatus(isValid ? "SUCCESS" : "FAILED");
                     orderPaymentRepository.save(payment);
 
-                    // ALSO UPDATE ORDER STATUS
                     Order order = payment.getOrder();
 
                     if (isValid) {
@@ -114,7 +139,7 @@ public class PaymentServiceImpl implements PaymentService {
                         order.setOrderStatus("CONFIRMED");
                     } else {
                         order.setPaymentStatus("FAILED");
-                        order.setOrderStatus("PENDING_PAYMENT"); // retry allowed
+                        order.setOrderStatus("PENDING_PAYMENT");
                     }
 
                     orderRepository.save(order);
@@ -123,13 +148,23 @@ public class PaymentServiceImpl implements PaymentService {
         return isValid;
     }
 
+
     private String generateSignature(String data, String secret) {
         try {
             SecretKeySpec secretKeySpec = new SecretKeySpec(secret.getBytes(), "HmacSHA256");
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(secretKeySpec);
             byte[] hashBytes = mac.doFinal(data.getBytes());
-            return Base64.getEncoder().encodeToString(hashBytes);
+
+            // CORRECT: Convert to Hex String (Razorpay requires this)
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hashBytes) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
+
         } catch (Exception e) {
             throw new RuntimeException("Error generating HMAC", e);
         }

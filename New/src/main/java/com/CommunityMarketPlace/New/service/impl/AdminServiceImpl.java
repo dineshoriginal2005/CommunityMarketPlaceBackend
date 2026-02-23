@@ -292,6 +292,8 @@ public class AdminServiceImpl implements AdminService {
 
     // ================= DASHBOARD =================
 
+    // ================= DASHBOARD =================
+
     @Override
     public AdminDashboardDto getOrderDashboard() {
         List<Order> orders = orderRepository.findAll();
@@ -319,8 +321,9 @@ public class AdminServiceImpl implements AdminService {
             String payStatus = o.getPaymentStatus() == null ? "" : o.getPaymentStatus().toUpperCase();
             String method = o.getPaymentMethod() == null ? "" : o.getPaymentMethod().toUpperCase();
 
-            double amount = o.getTotalAmount() == null ? 0 : o.getTotalAmount();
+            double amount = o.getTotalAmount() == null ? 0.0 : o.getTotalAmount();
 
+            // 1. Count Order Statuses
             switch (status) {
                 case "PENDING" -> pending++;
                 case "SHIPPED" -> shipped++;
@@ -328,11 +331,21 @@ public class AdminServiceImpl implements AdminService {
                 case "CANCELLED" -> cancelled++;
             }
 
-            if ("PAID".equals(payStatus)) revenue += amount;
-            if ("COD".equals(method) && "PENDING".equals(payStatus)) codPending += amount;
-            if (!"COD".equals(method) && "PAID".equals(payStatus)) onlinePaid += amount;
-        }
+            // 2. Calculate Total Revenue (Excluding cancelled orders)
+            if (!"CANCELLED".equals(status) && "PAID".equals(payStatus)) {
+                revenue += amount;
+            }
 
+            // 3. FIXED: Calculate COD Pending (Excluding cancelled COD orders)
+            if (!"CANCELLED".equals(status) && "COD".equals(method) && "PENDING".equals(payStatus)) {
+                codPending += amount;
+            }
+
+            // 4. Calculate Online Paid (Excluding cancelled orders and COD)
+            if (!"CANCELLED".equals(status) && !"COD".equals(method) && "PAID".equals(payStatus)) {
+                onlinePaid += amount;
+            }
+        }
         dto.setPendingOrders(pending);
         dto.setShippedOrders(shipped);
         dto.setDeliveredOrders(delivered);

@@ -46,10 +46,13 @@ public class SecurityConfig {
                         .requestMatchers("/auth/**").permitAll()
                         // Products
                         .requestMatchers("/products/**").permitAll()
-
+                        .requestMatchers("/payments/verify").permitAll()
+                        // 🔥 VERY IMPORTANT (for Razorpay verification)
                         // User
                         .requestMatchers("/cart/**").hasRole("USER")
                         .requestMatchers("/orders/**").hasRole("USER")
+                        .requestMatchers("/payments/create").hasRole("USER")
+                        .requestMatchers("/payments/**").hasRole("USER")
 
 
 

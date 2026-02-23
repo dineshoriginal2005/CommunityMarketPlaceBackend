@@ -10,4 +10,7 @@ public interface PaymentService {
     PaymentResponse createOrder(PaymentRequest request);
 
     boolean verifyPayment(VerifyPaymentRequest request);
+    void refundPayment(String razorpayPaymentId, Long amountInPaise);
+
+
 }

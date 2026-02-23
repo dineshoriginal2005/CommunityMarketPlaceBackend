@@ -18,6 +18,7 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
 
     // Admin: get all items for given orderId
     List<OrderItem> findByOrderId(Long orderId);
+    List<OrderItem> findBySellerIdAndOrderId(Long sellerId, Long orderId);
 
     @Query("SELECT oi FROM OrderItem oi WHERE oi.sellerId = :sellerId")
     List<OrderItem> findAllBySellerId(@Param("sellerId") Long sellerId);

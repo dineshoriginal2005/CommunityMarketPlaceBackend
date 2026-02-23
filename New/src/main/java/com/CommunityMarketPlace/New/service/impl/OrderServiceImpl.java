@@ -4,6 +4,7 @@ import com.CommunityMarketPlace.New.dto.*;
 import com.CommunityMarketPlace.New.model.*;
 import com.CommunityMarketPlace.New.repository.*;
 import com.CommunityMarketPlace.New.service.OrderService;
+import com.CommunityMarketPlace.New.service.PaymentService;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,6 +31,13 @@ public class OrderServiceImpl implements OrderService {
 
     @Autowired
     private OrderItemRepository orderItemRepository;
+
+    @Autowired
+    private PaymentService paymentService;
+
+    @Autowired
+    private OrderPaymentRepository orderPaymentRepository;
+
 
     private User getCurrentUser() {
         Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
@@ -109,14 +117,15 @@ public class OrderServiceImpl implements OrderService {
         order.setTotalAmount(totalAmount);
         order.setTotalItems(totalItems);
 
-        order.setShippingFullName(user.getFullName());
-        order.setShippingPhone(user.getPhoneNumber());
-        order.setShippingAddressLine1(user.getAddressLine1());
-        order.setShippingAddressLine2(user.getAddressLine2());
-        order.setShippingCity(user.getCity());
-        order.setShippingState(user.getState());
-        order.setShippingPincode(user.getPincode());
-        order.setShippingCountry(user.getCountry());
+        order.setShippingFullName(request.getShippingFullName());
+        order.setShippingPhone(request.getShippingPhone());
+        order.setShippingAddressLine1(request.getShippingAddressLine1());
+        order.setShippingAddressLine2(request.getShippingAddressLine2());
+        order.setShippingCity(request.getShippingCity());
+        order.setShippingState(request.getShippingState());
+        order.setShippingPincode(request.getShippingPincode());
+        order.setShippingCountry(request.getShippingCountry());
+
 
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
@@ -193,14 +202,16 @@ public class OrderServiceImpl implements OrderService {
         order.setTotalAmount(itemTotal);
         order.setTotalItems(request.getQuantity());
 
-        order.setShippingFullName(user.getFullName());
-        order.setShippingPhone(user.getPhoneNumber());
-        order.setShippingAddressLine1(user.getAddressLine1());
-        order.setShippingAddressLine2(user.getAddressLine2());
-        order.setShippingCity(user.getCity());
-        order.setShippingState(user.getState());
-        order.setShippingPincode(user.getPincode());
-        order.setShippingCountry(user.getCountry());
+        order.setShippingFullName(request.getShippingFullName());
+        order.setShippingPhone(request.getShippingPhone());
+        order.setShippingAddressLine1(request.getShippingAddressLine1());
+        order.setShippingAddressLine2(request.getShippingAddressLine2());
+        order.setShippingCity(request.getShippingCity());
+        order.setShippingState(request.getShippingState());
+        order.setShippingPincode(request.getShippingPincode());
+        order.setShippingCountry(request.getShippingCountry());
+
+
 
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
@@ -226,18 +237,46 @@ public class OrderServiceImpl implements OrderService {
     // ============================== CANCEL ORDER ==============================
     @Override
     public OrderResponse cancelMyOrder(Long orderId) {
+
         User user = getCurrentUser();
+
         Order order = orderRepository.findByIdAndUser(orderId, user)
                 .orElseThrow(() -> new RuntimeException("Order not found"));
 
-        if ("SHIPPED".equalsIgnoreCase(order.getOrderStatus()) ||
-                "DELIVERED".equalsIgnoreCase(order.getOrderStatus())) {
-            throw new RuntimeException("Cannot cancel shipped/delivered order");
+        // Allow cancel only if CONFIRMED
+        if (!"CONFIRMED".equalsIgnoreCase(order.getOrderStatus())) {
+            throw new RuntimeException("Order cannot be cancelled now");
         }
 
-        order.setOrderStatus("CANCELLED");
-        order.setUpdatedAt(System.currentTimeMillis());
+        // Prevent double refund
+        if ("REFUNDED".equalsIgnoreCase(order.getPaymentStatus())) {
+            throw new RuntimeException("Order already refunded");
+        }
 
+        // 🔥 ONLINE refund
+        if ("ONLINE".equalsIgnoreCase(order.getPaymentMethod())
+                && "PAID".equalsIgnoreCase(order.getPaymentStatus())) {
+
+            OrderPayment payment = orderPaymentRepository
+                    .findByOrder(order)
+                    .orElseThrow(() -> new RuntimeException("Payment record not found"));
+
+            paymentService.refundPayment(
+                    payment.getRazorpayPaymentId(),
+                    payment.getAmount()
+            );
+
+            payment.setStatus("REFUNDED");
+            payment.setUpdatedAt(System.currentTimeMillis());
+
+            order.setPaymentStatus("REFUNDED");
+        }
+        // 🔥 COD case
+        else if (!"ONLINE".equalsIgnoreCase(order.getPaymentMethod())) {
+            order.setPaymentStatus("CANCELLED");
+        }
+
+        // Restore stock
         for (OrderItem item : order.getItems()) {
             Product product = productRepository.findById(item.getProductId()).orElse(null);
             if (product != null) {
@@ -247,7 +286,12 @@ public class OrderServiceImpl implements OrderService {
             item.setItemStatus("CANCELLED");
         }
 
+
+        order.setOrderStatus("CANCELLED");
+        order.setUpdatedAt(System.currentTimeMillis());
+
         orderRepository.save(order);
+
         return mapToOrderResponse(order);
     }
 
